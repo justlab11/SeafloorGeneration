@@ -101,7 +101,7 @@ With the __.exr__ file, we now take subsections of that space. We typically do $
 ---
 
 ## Mastadon for Sonar Scans
-For this last portion, we use the Navy's open source version of [MASTODON](https://github.com/Sonar-Sim/MASTODON) which allows for us to simulate sonar scans of our environments. There's not a ton to do here, it's mostly plug and play. The only things you need are the __.txt__ file containing the depth map information and the config file. We don't use the one provided, we have a custom file so I will also provide that in this repo.
+For this last portion, we use the Navy's open source version of [MASTODON](https://github.com/Sonar-Sim/MASTODON) which allows for us to simulate sonar scans of our environments. There's not a ton to do here, it's mostly plug and play. The only things you need are the __.txt__ file containing the depth map information and the config file. We don't use the one provided, we have a custom file so I will also provide that in this repo. __NOTE:__ The config file assumes the size is $50\times30m^2$ and the resolution is $2.5cm$ in both directions.
 
 1. In the __.cfg__ file, put the depth map text file's path in the __environment.bottom.bathymetry.infile__ or CTRL+F `TXT FILE GOES HERE` and you'll see where to put it. You can also change the name of the simulation so the folder doesn't get overwritten.
 2. Run MASTADON
