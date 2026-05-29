@@ -11,7 +11,7 @@ We use Infinigen ([Home Page](https://infinigen.org/), [Github](https://github.c
 2. It allows for customization of each environment directly from the command line for rapid generation.
 
 ### Notes on Running Infinigen
-First, pay attention to what OS you're on, each OS has varying degrees of support found [here](https://github.com/princeton-vl/infinigen/blob/main/docs/Installation.md). Infinigen uses __gin__ files which can be a bit tricky so here's the [Infinigen documentation](https://github.com/princeton-vl/infinigen/tree/main#documentation). These are quite convenient to use since you can directly include class parameters and function parameters directly in the file. This allows for rapid customization and setting adjustments. I'll provide a few tables to help you navigate what I found to be the most useful parts.
+First, pay attention to what OS you're on, each OS has varying degrees of support found [here](https://github.com/princeton-vl/infinigen/blob/main/docs/Installation.md). Infinigen uses __.gin__ files which can be a bit tricky so here's the [Infinigen documentation](https://github.com/princeton-vl/infinigen/tree/main#documentation). These are quite convenient to use since you can directly include class parameters and function parameters directly in the file. This allows for rapid customization and setting adjustments. I'll provide a few tables to help you navigate what I found to be the most useful parts.
 
 #### Functions & Classes
 | Name | Useful Reason | Location |
@@ -95,7 +95,7 @@ Go to the `Render` tab and hit `Render Image`.
 
 </details>
 
-With the __.exr__ file, we now take subsections of that space. We typically do $50\times30m^2$ patches so that we have a long stretch of land to run the sonar simulation across. Since the space is $4000\times4000px$ at $2.5cm$ resolution, that works out to subsections of size $2000\times1200px$. We have done rescaling in the past since mountains that are 10m in height aren't really a thing in water, but that's really only necessary for some environments. Finally, we pass the depth map into a script to properly convert the depth map into a readable format for the next step. This format is a __.txt__ file with the rows and columns stacked.
+With the __.exr__ file, we now take subsections of that space. We typically do $50\times30m^2$ patches so that we have a long stretch of land to run the sonar simulation across. Since the space is $4000\times4000px$ at $2.5cm$ resolution, that works out to subsections of size $2000\times1200px$ ($50/0.025 and 30/0.025$). We have done rescaling in the past since mountains that are 10m in height aren't really a thing in water, but that's really only necessary for some environments. Finally, we pass the depth map into a script to properly convert the depth map into a readable format for the next step. This format is a __.txt__ file with the rows and columns stacked.
 
 ---
 
