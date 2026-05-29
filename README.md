@@ -54,3 +54,38 @@ If I was better with Infinigen, this step probably wouldn't exist. I'm pretty su
 
 To handle the Blender method (1) isn't too bad; I made a nice python script to handle it for you. You can run it headless so it's even less annoying, but it does take a bit to run and it could crash if your GPU sucks. If you want to do it manually to get a better sense of what's going on, I'll include some pictures to show exactly what values I used and why I used them.
 
+<details>
+<summary>Blender Steps for Building Depth Map</summary>
+
+### 1. Camera Rig
+Ensure that the camera rig is set to position 0,0,0 and rotation 0,0,0. The main camera is translated off of whatever these values are, so they act as an annoying offset if you're not paying attention.
+
+![Rig Setup](/example_images/1_camera_rig.jpg)
+
+### 2. Camera Settings
+These are all of the settings I used for the camera. 
+- Starting with the rendering side of things. I switched to EEVEE because it works better for the depth map stuff and it's faster.
+
+![Rig Settings](/example_images/2_camera_scene.jpg)
+
+- The scene settings. Since this is $100\times100m^2$ and we want a resolution of $2.5cm$, we do $100/0.025 = 4000$ to get the resolution of $4000\times4000$. We also switch to EXR on the bottom to avoid accidentally normalizing the values.
+
+![Camera Resolution Settings](/example_images/3_camera_res.jpg)
+
+- The layer settings. Here we're just adding in a depth layer so we can calculate the depth.
+
+![Camera Layer Settings](/example_images/4_camera_layers.jpg)
+
+- The location settings. We want the location high in sky and at the center of our scene. It's arbitrarily set to 300, but it doesn't matter as long as it's above the scene. It faces $180\degree$ down to focus on the floor.
+
+![Camera Location Settings](/example_images/5_camera_loc.jpg)
+
+- The lens settings. These are extremely important. Orthographic lets us focus on the entire camera view and doesn't blur the edges I think. the scale is set to 100 here focus on the entire scene.
+
+![Rig Setup](/example_images/6_camera_lens.jpg)
+
+</details>
+
+### 3. Composite Settings
+In the `Compositing` tab you'll have to rebuild this node setup:
+
