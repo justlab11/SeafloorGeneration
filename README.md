@@ -7,12 +7,11 @@ This repo is meant to store the entire workflow behind the seafloor generation s
 ## Infinigen for Environment Generation
 We use Infinigen ([Home Page](https://infinigen.org/), [Github](https://github.com/princeton-vl/infinigen), [ArXiV](https://arxiv.org/abs/2406.11824)) to generate realistic environments which we use as pseudo-seafloors. Infinigen is perfect for our goals because it meets a few criteria:
 
-1. It creates large-scale ($100\times100m^2$) scenes set in several unique environments with default fauna and flora for each region. 
+1. It creates large-scale ($100\times100m^2$) scenes set in several unique environments with default plants and animals for each region. 
 2. It allows for customization of each environment directly from the command line for rapid generation.
-3. 
 
 ### Notes on Running Infinigen
-First, pay attention to what machine you're on, the machines have varying degrees of support found [here](https://github.com/princeton-vl/infinigen/blob/main/docs/Installation.md). Infinigen uses __gin__ files which can be a bit tricky so here's the [Infinigen documentation](https://github.com/princeton-vl/infinigen/tree/main#documentation). These are quite convenient to use since you can directly include class parameters and function parameters directly in the file. This allows for rapid customization and setting adjustments. I'll provide a few tables to help you navigate what I found to be the most useful parts.
+First, pay attention to what OS you're on, each OS has varying degrees of support found [here](https://github.com/princeton-vl/infinigen/blob/main/docs/Installation.md). Infinigen uses __gin__ files which can be a bit tricky so here's the [Infinigen documentation](https://github.com/princeton-vl/infinigen/tree/main#documentation). These are quite convenient to use since you can directly include class parameters and function parameters directly in the file. This allows for rapid customization and setting adjustments. I'll provide a few tables to help you navigate what I found to be the most useful parts.
 
 #### Functions & Classes
 | Name | Useful Reason | Location |
