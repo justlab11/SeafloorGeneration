@@ -57,16 +57,18 @@ To handle the Blender method (1) isn't too bad; I made a nice python script to h
 <details>
 <summary>Blender Steps for Building Depth Map</summary>
 
-### 1. Camera Rig
-Ensure that the camera rig is set to position 0,0,0 and rotation 0,0,0. The main camera is translated off of whatever these values are, so they act as an annoying offset if you're not paying attention.
+## ___This  is if you need to do it yourself for whatever reason. There is a python script to do this for you so you don't need to worry about this most likely.___
 
-![Rig Setup](/example_images/1_camera_rig.jpg)
+### 1. Camera Rig
+Ensure that the camera rig is set to position (0, 0, 0) and rotation (0, 0, 0). The main camera is translated off of whatever these values are, so they act as an annoying offset if you're not paying attention.
+
+![Rig Settings](/example_images/1_camera_rig.jpg)
 
 ### 2. Camera Settings
 These are all of the settings I used for the camera. 
 - Starting with the rendering side of things. I switched to EEVEE because it works better for the depth map stuff and it's faster.
 
-![Rig Settings](/example_images/2_camera_scene.jpg)
+![Camera Scene Settings](/example_images/2_camera_scene.jpg)
 
 - The scene settings. Since this is $100\times100m^2$ and we want a resolution of $2.5cm$, we do $100/0.025 = 4000$ to get the resolution of $4000\times4000$. We also switch to EXR on the bottom to avoid accidentally normalizing the values.
 
@@ -80,12 +82,33 @@ These are all of the settings I used for the camera.
 
 ![Camera Location Settings](/example_images/5_camera_loc.jpg)
 
-- The lens settings. These are extremely important. Orthographic lets us focus on the entire camera view and doesn't blur the edges I think. the scale is set to 100 here focus on the entire scene.
+- The lens settings. These are extremely important. Orthographic lets us focus on the entire camera view and doesn't blur the edges I think. the scale is set to 100 here to focus on the entire scene.
 
-![Rig Setup](/example_images/6_camera_lens.jpg)
-
-</details>
+![Camera Lens Settings](/example_images/6_camera_lens.jpg)
 
 ### 3. Composite Settings
 In the `Compositing` tab you'll have to rebuild this node setup:
 
+![Composite Nodes](/example_images/7_composite_nodes.jpg)
+
+### 4. Render 
+Go to the `Render` tab and hit `Render Image`.
+
+</details>
+
+With the __.exr__ file, we now take subsections of that space. We typically do $50\times30m^2$ patches so that we have a long stretch of land to run the sonar simulation across. Since the space is $4000\times4000px$ at $2.5cm$ resolution, that works out to subsections of size $2000\times1200px$. We have done rescaling in the past since mountains that are 10m in height aren't really a thing in water, but that's really only necessary for some environments. Finally, we pass the depth map into a script to properly convert the depth map into a readable format for the next step. This format is a __.txt__ file with the rows and columns stacked.
+
+---
+
+## Mastadon for Sonar Scans
+For this last portion, we use the Navy's open source version of [MASTODON](https://github.com/Sonar-Sim/MASTODON) which allows for us to simulate sonar scans of our environments. There's not a ton to do here, it's mostly plug and play. The only things you need are the __.txt__ file containing the depth map information and the config file. We don't use the one provided, we have a custom file so I will also provide that in this repo.
+
+1. In the __.cfg__ file, put the depth map text file's path in the __environment.bottom.bathymetry.infile__ or CTRL+F `TXT FILE GOES HERE` and you'll see where to put it. You can also change the name of the simulation so the folder doesn't get overwritten.
+2. Run MASTADON
+```bash
+.\bin\MASTODON.exe CONFIG.cfg
+```
+
+This will generate the sonar scan for you to view under `Beamformed.h5`. I'll try to include some code to view the result and double check that it's correct.
+
+That's the end of the documentation. I don't think there's any other major details I've forgotten, but you can email me if needed.
