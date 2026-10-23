@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Run a sweep of MASTODON experiments over ripple height, range window, sonar height and ping count.
+"""Run a sweep of MASTODON experiments over ripple height, window, sonar height and ping count.
 
 One folder per (height, window, distance):
     <output-folder>/<sweep-name>/exp_<NN>cm_<window>_<distance>/
 
-Inside each folder every num_pings value is run in turn. After each run the two images are
-renamed to {ping}_raw.jpg and {ping}_normed.jpg, and the big Beamformed.h5, StaveData.h5 and
-Depth.txt are deleted. Everything else (cfg, run.log, raw/normed .npy) is overwritten by the
-next run. If a run fails, those big files are kept (for debugging) and its log is saved as
-{ping}_failed.log.
-
-Runs whose {ping}_normed.jpg already exists are skipped, so an interrupted sweep can be rerun.
+After each run the images are renamed to {ping}_raw.jpg, {ping}_normed.jpg and {ping}_grouped.jpg,
+and the big Beamformed.h5, StaveData.h5 and Depth.txt are deleted. Everything else (cfg, run.log,
+raw/normed .npy) is overwritten by the next run. If a run fails, the big files are kept and its
+log is saved as {ping}_failed.log. Runs whose {ping}_normed.jpg exists are skipped, so an
+interrupted sweep can be rerun.
 
 Per experiment the template is changed as follows:
     environment.bottom.bathymetry.infile  heightmap for this height/window/distance
@@ -24,7 +22,8 @@ Heightmaps come from make_ripple_variants.py:
     <depthmap-root>/ripple_sizes_scaled_wl/<NN>cm/...   (use --depthmap-set scaled)
 
 Example:
-    python src/run_ripple_experiments.py --exe-location ./bin/my_program
+    python src/run_ripple_experiments.py --exe-location ./bin/MASTODON.exe
+    python src/run_ripple_experiments.py --exe-location ./bin/MASTODON.exe --depthmap-set scaled
 """
 import argparse
 import shutil
@@ -38,19 +37,40 @@ from visualize_beamformed import process_beamformed
 CONFIG_TEMPLATE = Path("mastodon_configs/CONFIG.cfg")
 
 HEIGHTS_CM = [5, 10, 20, 50]                          # ripple crest-to-trough
-WINDOWS = ["0-10", "10-20", "20-30", "30-40", "40-50"]  # ground range (x) the ripples occupy, in m
+WINDOWS = ["nowindow", "0-10", "10-20", "20-30", "30-40", "40-50"]  # ground range (x) the ripples occupy, in m
 DISTANCES = [5, 10]                                   # sonar height above the floor (m)
-NUM_PINGS = [111, 222]                                # dping 0.1365 m -> ~15 m and ~30 m of track
+NUM_PINGS = [222]                                     # dping 0.1365 m -> ~30 m of track, the full 30 m map
 WATER_DEPTH = 20.0
 
 
 def exp_name(height, window, distance):
+    """Folder name of one experiment.
+
+    Args:
+        height: ripple height in cm.
+        window: window label such as "10-20" or "nowindow".
+        distance: sonar height above the floor in meters.
+    Returns:
+        str, e.g. "exp_05cm_nowindow_5".
+    """
     return f"exp_{height:02d}cm_{window}_{distance}"
 
 
 def depthmap_path(root, height, window, distance, depthmap_set):
-    """Heightmap for this experiment. The scaled set has no 10 cm folder (it is the same as the
-    fixed one), and the _<distance> files are identical copies, so fall back as needed."""
+    """Heightmap file for one experiment.
+
+    The scaled set has no 10 cm folder (it is the same as the fixed one), and the _<distance> files
+    are identical copies, so the lookup falls back as needed.
+
+    Args:
+        root: folder written by make_ripple_variants.py.
+        height, window, distance: the experiment.
+        depthmap_set: "fixed" or "scaled".
+    Returns:
+        Path of the file (it may not exist; the caller checks).
+    Example:
+        depthmap_path(Path("example_depthmaps"), 20, "10-20", 5, "fixed")
+    """
     exp = "ripple_sizes_scaled_wl" if depthmap_set == "scaled" and height != 10 else "ripple_sizes_fixed_wl"
     folder = root / exp / f"{height:02d}cm"
     for d in (distance, DISTANCES[0]):
@@ -61,6 +81,14 @@ def depthmap_path(root, height, window, distance, depthmap_set):
 
 
 def parse_args(argv=None):
+    """Read and check the command line.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        Namespace with exe_location, depthmap_root, depthmap_set, output_folder and sweep_name.
+        Exits with an error if the executable, config template or any heightmap is missing.
+    """
     p = argparse.ArgumentParser(
         description="Run a sweep of MASTODON experiments over ripple height, range window, "
                     "sonar height and ping count.",
@@ -95,7 +123,18 @@ def parse_args(argv=None):
 
 
 def run_one(exe, folder, config, cfg, ping):
-    """Set num_pings, run the exe, make the images, rename the jpgs, delete the big files."""
+    """Run MASTODON once for one ping count, make the images and delete the big files.
+
+    Args:
+        exe: path to the MASTODON executable.
+        folder: experiment folder (also the working directory of the run).
+        config: path of the config file inside folder.
+        cfg: the loaded config, modified with the new num_pings.
+        ping: number of pings.
+    Returns:
+        None. Renames the jpgs to {ping}_raw/normed/grouped.jpg. Raises if the run fails or
+        Beamformed.h5 is not created.
+    """
     cfg["platforms"]["num_pings"] = int(ping)
     with open(config, "w") as f:
         libconf.dump(cfg, f)
@@ -116,7 +155,7 @@ def run_one(exe, folder, config, cfg, ping):
 
     process_beamformed(beamformed)
 
-    for kind in ("raw", "normed"):
+    for kind in ("raw", "normed", "grouped"):
         (folder / f"{kind}.jpg").replace(folder / f"{ping}_{kind}.jpg")
 
     # only after the images exist: these files are huge and not needed any more
@@ -126,6 +165,15 @@ def run_one(exe, folder, config, cfg, ping):
 
 
 def main(argv=None):
+    """Run the full sweep, skipping runs that already have their normed image.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        0 if every run worked, 1 if any failed.
+    Example:
+        main(["--exe-location", "bin/MASTODON.exe", "--depthmap-set", "scaled"])
+    """
     args = parse_args(argv)
 
     exe = args.exe_location.resolve()

@@ -1,6 +1,8 @@
 venv/
 results/
 experiments/
+tmp/
 */ripple_sizes_original.zip
 */ripple_sizes_fixed_wl
 */ripple_sizes_scaled_wl
+*/__pycache__

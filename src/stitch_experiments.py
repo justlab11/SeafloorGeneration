@@ -28,7 +28,17 @@ DPI = 150
 
 
 def load_images(root, ping):
-    """Returns [(bottom type, image array or None), ...] in BOTTOM_TYPES order."""
+    """Load one normed image per bottom type.
+
+    Args:
+        root: experiments folder with one subfolder per bottom type.
+        ping: which num_pings result to load.
+    Returns:
+        List of (bottom type, image array or None), in BOTTOM_TYPES order; None (and a warning)
+        where the file is missing.
+    Example:
+        images = load_images(Path("experiments"), 211)
+    """
     images = []
     for bottom in BOTTOM_TYPES:
         path = root / slugify(bottom) / f"{ping}_normed.jpg"
@@ -41,6 +51,16 @@ def load_images(root, ping):
 
 
 def stitch(images, output):
+    """Tile the images into one labeled grid, NCOLS across, and save it.
+
+    Args:
+        images: list of (label, image array or None) from load_images; None leaves a blank cell.
+        output: output image path.
+    Returns:
+        None. Raises FileNotFoundError if there are no images at all.
+    Example:
+        stitch(images, "experiments/stitched_211_normed.jpg")
+    """
     ref = next((img for _, img in images if img is not None), None)
     if ref is None:
         raise FileNotFoundError("no images found to stitch")
@@ -71,6 +91,14 @@ def stitch(images, output):
 
 
 def parse_args(argv=None):
+    """Read and check the command line.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        Namespace with experiments_folder, ping and output (default: stitched_<ping>_normed.jpg
+        inside the experiments folder).
+    """
     p = argparse.ArgumentParser(
         description="Stitch one normed image per bottom type into a labeled grid.",
     )
@@ -90,6 +118,15 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    """Stitch the experiments folder's normed images into one grid.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        0 on success.
+    Example:
+        python src/stitch_experiments.py --experiments-folder experiments/ --ping 211
+    """
     args = parse_args(argv)
 
     images = load_images(args.experiments_folder, args.ping)

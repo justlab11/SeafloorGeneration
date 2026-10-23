@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Boilerplate script: takes an executable, an input txt file, and an output folder.
+"""Run MASTODON once on one heightmap and make the images.
+
+Copies mastodon_configs/CONFIG.cfg into the output folder, points it at the heightmap, runs the
+executable there and then calls visualize_beamformed.process_beamformed on the result.
 
 Example:
-    python src/run_mastodon.py --exe-location ./bin/my_program --input-txt example_depthmaps/ripple_depth.txt --output-folder results/
+    python src/run_mastodon.py --exe-location ./bin/MASTODON.exe --input-txt example_depthmaps/ripple_depth.txt --output-folder results/
 """
 import argparse
 import sys
@@ -14,6 +17,14 @@ from visualize_beamformed import process_beamformed
 
 
 def parse_args(argv=None):
+    """Read and check the command line.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        Namespace with exe_location, input_txt and output_folder. Exits with an error if the
+        executable or input file is missing.
+    """
     p = argparse.ArgumentParser(
         description="TODO: describe what this script does.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -35,6 +46,15 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    """Run MASTODON on the heightmap and write the images into the output folder.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        0 on success, 1 if Beamformed.h5 was not created (see run.log in the output folder).
+    Example:
+        main(["--exe-location", "bin/MASTODON.exe", "--input-txt", "map.txt", "--output-folder", "results"])
+    """
     args = parse_args(argv)
 
     exe = args.exe_location.resolve()

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Generate a synthetic sand-ripple heightmap and save it as a text file.
 
+The txt is the format MASTODON reads through environment.bottom.bathymetry.infile. Rows are
+written reversed in y by default, which makes the sonar image match the plotted heightmap.
+
 Example:
-    python src/make_ripple_heightmap.py --total-x-m 50 --total-y-m 30 --cell 0.025 -o example_depthmaps/ripple_depth.txt
+    python src/ripple_maker.py --total-x-m 50 --total-y-m 30 --cell 0.025 -o example_depthmaps/ripple_depth.txt --plot
 """
 import argparse
 import sys
@@ -12,7 +15,15 @@ import numpy as np
 
 
 def _smooth_noise(shape, scale, rng):
-    """Smooth random field in [-1, 1], made by low-pass filtering white noise via FFT."""
+    """Smooth random field in [-1, 1], made by low-pass filtering white noise with an FFT.
+
+    Args:
+        shape: (rows, cols) of the field.
+        scale: rough feature size in pixels.
+        rng: numpy Generator used for the noise.
+    Returns:
+        2D float array of the given shape.
+    """
     h, w = shape
     white = rng.standard_normal(shape)
     fy = np.fft.fftfreq(h)[:, None]
@@ -34,11 +45,22 @@ def ripple_depth_map(
     base_depth=10.0,     # mean water depth
     seed=None,
 ):
-    """
-    Generate a depth map of sand ripples like those on a shallow seafloor.
+    """Generate a depth map of sand ripples like those on a shallow seafloor.
 
-    Returns a 2D float array of depth values (larger = deeper). Ripple crests
-    are shallower (smaller depth) and troughs are deeper.
+    Args:
+        size: (rows, cols) in pixels.
+        wavelength: crest spacing in pixels.
+        angle: ripple direction in radians.
+        amplitude: crest-to-trough height scale.
+        sinuosity: how much the crests wiggle.
+        asymmetry: 0 = symmetric sine, higher = steeper lee slope.
+        grain: fine sand-grain noise level.
+        base_depth: mean water depth.
+        seed: random seed.
+    Returns:
+        2D float array of depths (larger = deeper); crests are shallower, troughs deeper.
+    Example:
+        depth = ripple_depth_map(size=(1000, 2000), wavelength=40, seed=7)
     """
     rng = np.random.default_rng(seed)
     h, w = size
@@ -70,8 +92,18 @@ def ripple_depth_map(
 
 
 def edge_taper(n, n_ramp):
-    """1D window of length n: smooth 0->1 over n_ramp samples, flat at 1, smooth 1->0 at the end.
-    Smoothstep is used instead of a linear ramp so there is no slope kink where the ripples start."""
+    """1D window that rises smoothly 0 -> 1, stays at 1, then falls smoothly 1 -> 0.
+
+    Smoothstep is used instead of a linear ramp so there is no slope kink where the ripples start.
+
+    Args:
+        n: length of the window.
+        n_ramp: samples each ramp takes.
+    Returns:
+        1D float array of length n.
+    Example:
+        field *= edge_taper(1040, 200)[:, None]
+    """
     t = np.clip(np.arange(n) / max(n_ramp, 1), 0.0, 1.0)
     up = t * t * (3 - 2 * t)
     return np.minimum(up, up[::-1])
@@ -88,9 +120,22 @@ def build_heightmap(
     seed=None,
     **ripple_kwargs,       # angle, sinuosity, asymmetry, grain ... passed to ripple_depth_map
 ):
-    """
-    Returns (grid, min_x, min_y). grid has shape (rows=y, cols=x), values in meters,
-    zero outside the ripple band. The patch is centered on y=0 and starts at x=0.
+    """Build a full ripple heightmap in meters, flat (0) outside the ripple band.
+
+    Args:
+        total_y_m, total_x_m: size of the whole patch (rows = y, columns = x).
+        ripple_y_m: y extent covered by ripples (default: all of total_y_m).
+        taper_m: fade-in/out length at each y edge of the ripple band.
+        cell: meters per pixel.
+        wavelength_m: crest spacing.
+        peak_m: largest |deviation| from flat.
+        seed: random seed.
+        **ripple_kwargs: angle, sinuosity, asymmetry, grain, passed to ripple_depth_map.
+    Returns:
+        (grid, min_x, min_y). grid has shape (rows, cols) in meters; the patch starts at x = 0
+        and is centered on y = 0.
+    Example:
+        grid, min_x, min_y = build_heightmap(peak_m=0.05, seed=7)
     """
     if ripple_y_m is None:
         ripple_y_m = total_y_m
@@ -118,7 +163,26 @@ def build_heightmap(
     return grid, 0.0, -total_y_m / 2
 
 
-def save_heightmap_txt(filename, grid, min_x, dx, min_y, dy):
+def save_heightmap_txt(filename, grid, min_x, dx, min_y, dy, reverse_y=True):
+    """Write a heightmap in the txt format MASTODON reads.
+
+    The file has a header ("cols rows", "min_x dx", "min_y dy") and then one value per line, x
+    varying fastest.
+
+    Args:
+        filename: output path.
+        grid: 2D array, rows = y, columns = x, in meters.
+        min_x, dx, min_y, dy: grid origin and cell size.
+        reverse_y: write the rows in reverse order. MASTODON reads them reversed, so the sonar
+            image then matches the grid as given. The header is unchanged, so use it with grids
+            centered on y = 0. False gives the old, mirrored behavior.
+    Returns:
+        None; writes filename.
+    Example:
+        save_heightmap_txt("depthmap.txt", grid, 0.0, 0.025, -15.0, 0.025)
+    """
+    if reverse_y:
+        grid = grid[::-1]
     rows, cols = grid.shape
     with open(filename, "w") as f:
         f.write(f"{cols} {rows}\n")
@@ -128,6 +192,18 @@ def save_heightmap_txt(filename, grid, min_x, dx, min_y, dy):
 
 
 def plot_heightmap(grid, min_x, min_y, cell, image_path):
+    """Plot a heightmap, save it as an image and show it.
+
+    Args:
+        grid: 2D array in meters.
+        min_x, min_y: grid origin.
+        cell: meters per pixel.
+        image_path: where to save the jpg.
+    Returns:
+        None.
+    Example:
+        plot_heightmap(grid, 0.0, -15.0, 0.025, "ripple_depth.jpg")
+    """
     import matplotlib.pyplot as plt
 
     rows, cols = grid.shape
@@ -176,6 +252,9 @@ def parse_args(argv=None):
                    help="0 = symmetric sine, higher = steeper lee slope")
     p.add_argument("--grain", type=float, default=0.03, help="fine sand-grain noise level")
 
+    p.add_argument("--no-reverse-y", action="store_true",
+                   help="write rows in plot order instead of reversed (the sonar image then comes "
+                        "out mirrored along-track)")
     p.add_argument("--plot", action="store_true", help="show a plot of the result and save it as a .jpg next to the output file")
 
     args = p.parse_args(argv)
@@ -190,6 +269,15 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    """Command line entry point: build the heightmap, save it, optionally plot it.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        0.
+    Example:
+        main(["-o", "ripple_depth.txt", "--peak-m", "0.05"])
+    """
     args = parse_args(argv)
 
     grid, min_x, min_y = build_heightmap(
@@ -207,7 +295,8 @@ def main(argv=None):
         grain=args.grain,
     )
 
-    save_heightmap_txt(args.output, grid, min_x, args.cell, min_y, args.cell)
+    save_heightmap_txt(args.output, grid, min_x, args.cell, min_y, args.cell,
+                       reverse_y=not args.no_reverse_y)
     print(f"Saved {args.output}: shape {grid.shape}, range {grid.min():.4f} to {grid.max():.4f}")
 
     if args.plot:

@@ -48,14 +48,31 @@ BOTTOM_TYPES = [
     "Clay",
 ]
 
-NUM_PINGS = [13, 25, 49, 99, 111, 211, 333]
+NUM_PINGS = [13, 25, 49, 99, 111, 222, 333]
 
 
 def slugify(name):
+    """Folder name for a bottom type.
+
+    Args:
+        name: bottom type, e.g. "Rough Rock".
+    Returns:
+        Lowercase name with underscores, e.g. "rough_rock".
+    """
     return name.lower().replace(" ", "_")
 
 
 def parse_args(argv=None):
+    """Read and check the command line.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        Namespace with exe_location, input_txt and output_folder. Exits with an error if the
+        executable, input file or config template is missing.
+    Example:
+        args = parse_args(["--exe-location", "bin/MASTODON.exe", "--input-txt", "map.txt", "--output-folder", "experiments"])
+    """
     p = argparse.ArgumentParser(
         description="Run a sweep of MASTODON experiments over bottom types and ping counts.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -79,7 +96,21 @@ def parse_args(argv=None):
 
 
 def run_one(exe, folder, config, cfg, ping):
-    """Set num_pings, run the exe, make the images, and rename the jpgs."""
+    """Run MASTODON once for one ping count and make its images.
+
+    Sets num_pings in the config, runs the executable inside folder, then makes the raw and
+    normalized images and renames them to {ping}_raw.jpg and {ping}_normed.jpg. Everything else,
+    including grouped.jpg, is overwritten by the next run.
+
+    Args:
+        exe: path to the MASTODON executable.
+        folder: experiment folder (also the working directory of the run).
+        config: path of the config file inside folder.
+        cfg: the loaded config, modified with the new num_pings.
+        ping: number of pings.
+    Returns:
+        None. Raises if the run fails or Beamformed.h5 is not created.
+    """
     cfg["platforms"]["num_pings"] = int(ping)
     with open(config, "w") as f:
         libconf.dump(cfg, f)
@@ -102,6 +133,15 @@ def run_one(exe, folder, config, cfg, ping):
 
 
 def main(argv=None):
+    """Run the full sweep over bottom types and ping counts, skipping finished runs.
+
+    Args:
+        argv: argument list (default: sys.argv).
+    Returns:
+        0 if every run worked, 1 if any failed.
+    Example:
+        python src/run_experiments.py --exe-location bin/MASTODON.exe --input-txt example_depthmaps/ripple_depth.txt --output-folder experiments/
+    """
     args = parse_args(argv)
 
     exe = args.exe_location.resolve()
