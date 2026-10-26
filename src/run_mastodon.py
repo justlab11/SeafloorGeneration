@@ -26,7 +26,7 @@ def parse_args(argv=None):
         executable or input file is missing.
     """
     p = argparse.ArgumentParser(
-        description="TODO: describe what this script does.",
+        description="Run MASTODON once on one heightmap and make the raw, normalized and grouped images.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--exe-location", required=True, type=Path,

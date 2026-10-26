@@ -5,7 +5,7 @@ Folders are visited in the same order as BOTTOM_TYPES in run_experiments.py, fil
 right, then top to bottom (2 across). Each image gets its bottom type as a label on top.
 
 Example:
-    python src/stitch_experiments.py --experiments-folder experiments/ --ping 211
+    python src/stitch_experiments.py --experiments-folder experiments/ --ping 222
 """
 import argparse
 import math
@@ -37,7 +37,7 @@ def load_images(root, ping):
         List of (bottom type, image array or None), in BOTTOM_TYPES order; None (and a warning)
         where the file is missing.
     Example:
-        images = load_images(Path("experiments"), 211)
+        images = load_images(Path("experiments"), 222)
     """
     images = []
     for bottom in BOTTOM_TYPES:
@@ -59,7 +59,7 @@ def stitch(images, output):
     Returns:
         None. Raises FileNotFoundError if there are no images at all.
     Example:
-        stitch(images, "experiments/stitched_211_normed.jpg")
+        stitch(images, "experiments/stitched_222_normed.jpg")
     """
     ref = next((img for _, img in images if img is not None), None)
     if ref is None:
@@ -104,8 +104,8 @@ def parse_args(argv=None):
     )
     p.add_argument("--experiments-folder", required=True, type=Path,
                    help="root folder containing one subfolder per bottom type")
-    p.add_argument("--ping", type=int, default=211,
-                   help="which num_pings result to use (default: 211)")
+    p.add_argument("--ping", type=int, default=222,
+                   help="which num_pings result to use (default: 222)")
     p.add_argument("--output", type=Path, default=None,
                    help="output image path (default: <experiments-folder>/stitched_<ping>_normed.jpg)")
 
@@ -125,7 +125,7 @@ def main(argv=None):
     Returns:
         0 on success.
     Example:
-        python src/stitch_experiments.py --experiments-folder experiments/ --ping 211
+        python src/stitch_experiments.py --experiments-folder experiments/ --ping 222
     """
     args = parse_args(argv)
 
