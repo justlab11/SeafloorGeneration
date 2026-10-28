@@ -165,6 +165,16 @@ Each run folder holds `CONFIG.cfg` (the config used), `run.log`, `StaveData.h5` 
 
 The sweeps rename the jpgs to `{ping}_raw.jpg`, `{ping}_normed.jpg` and `{ping}_grouped.jpg`, and the ripple sweep deletes the large `.h5` files after each successful run (`raw.npy` is kept, so images can be remade).
 
+### Example outputs
+The full results of our two experiments are far too large for git (the `.h5` and `.npy` files add up to about 80 GB), so [`example_outputs/`](example_outputs/) holds zips of just the images:
+
+| Zip | Contents | How it was generated |
+|---|---|---|
+| [`material_pings_images.zip`](example_outputs/material_pings_images.zip) | The raw and normed jpgs for every bottom type at each ping count, one folder per bottom type. | `run_experiments.py` on `ripple_depth.txt`: 23 bottom types $\times$ ping counts from 13 to 333. These were made with an earlier version of `visualize_beamformed.py` (the old 20% trim, and no grouped image), so they look slightly different from the newer images. |
+| [`ripple_grouped_1200px.zip`](example_outputs/ripple_grouped_1200px.zip) | One grouped image (heightmap, raw and normed stacked) per ripple experiment: 48 in `fixed/` and 48 in `scaled/`, named like `exp_05cm_10-20_5.jpg` (5 cm ripples, window x = 10-20 m, sonar 5 m above the floor). | `run_ripple_experiments.py` at 222 pings, once with `--depthmap-set fixed` and once with `--depthmap-set scaled`. The `grouped.jpg` from each run was resized to 1200 px wide (JPEG quality 85) to keep the zip small. |
+
+The raw and normed arrays and the `.h5` files are not included. To get them, rerun the sweeps (a ripple run takes a few minutes).
+
 ### What each file does
 Files in bold are useful beyond the toy ripple case; the rest exist to build and visualize the ripple examples.
 
