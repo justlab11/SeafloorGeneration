@@ -301,18 +301,20 @@ def plot_heatmap(data, window, distance, path):
     fig.savefig(path, dpi=200)
 
 
-def make_plots(out_folder, existing_stats, heatmap_window):
+def make_plots(out_folder, existing_stats, heatmap_window, more_stats=()):
     """Merge the stats and write every plot.
 
     Args:
         out_folder: <output-folder>.
         existing_stats: path of the earlier sweeps' csv, or None.
         heatmap_window: window label for the heatmaps.
+        more_stats: stats.csv files from other machines.
     Returns:
         None.
     """
     data = read_existing_stats(existing_stats) if existing_stats else {}
-    data.update(read_stats(out_folder / "stats.csv"))   # this script's runs win if both exist
+    for path in (out_folder / "stats.csv", *more_stats):
+        data.update(read_stats(path))   # this script's runs win if both exist
     if not data:
         print("No stats to plot.")
         return
@@ -341,10 +343,14 @@ def parse_args(argv=None):
                    help="folder for the runs, heightmaps, stats.csv and plots")
     p.add_argument("--combos", choices=["all", "missing"], default="all",
                    help="all 16 height x wavelength combinations, or only the 9 the earlier sweeps lack")
+    p.add_argument("--distance", type=int, choices=DISTANCES, default=None,
+                   help="only this sonar height (m), so two machines can split the sweep: 5 on one, 10 on the other")
     p.add_argument("--workers", type=int, default=1,
                    help="MASTODON runs at the same time (each needs about 8 GB of memory)")
     p.add_argument("--existing-stats", type=Path, default=None,
                    help="csv of the earlier sweeps (columns set, height_cm, window, dist, std_ratio) to add to the plots")
+    p.add_argument("--more-stats", type=Path, nargs="*", default=[],
+                   help="stats.csv files from other machines (same format as this script's) to add to the plots")
     p.add_argument("--heatmap-window", default="30-40", choices=[window_label(w) for w in WINDOWS],
                    help="window shown in the heatmaps")
     p.add_argument("--plot-only", action="store_true", help="skip the runs and only redraw the plots")
@@ -375,9 +381,10 @@ def main(argv=None):
         combos = [(h, wl) for h in HEIGHTS_CM for wl in WAVELENGTHS_M
                   if args.combos == "all" or (h, wl) not in EXISTING]
         done = set(read_stats(out_folder / "stats.csv"))
-        jobs = [(h, wl, w, d) for h, wl in combos for w in WINDOWS for d in DISTANCES
-                if (h, wl, window_label(w), d) not in done]
-        print(f"{len(combos)} combinations, {len(jobs)} runs to do ({len(combos) * len(WINDOWS) * len(DISTANCES) - len(jobs)} already done)")
+        wanted = [(h, wl, w, d) for h, wl in combos for w in WINDOWS for d in DISTANCES
+                  if args.distance in (None, d)]
+        jobs = [j for j in wanted if (j[0], j[1], window_label(j[2]), j[3]) not in done]
+        print(f"{len(combos)} combinations, {len(jobs)} runs to do ({len(wanted) - len(jobs)} already done)")
         if args.dry_run:
             for h, wl, w, d in jobs:
                 print(" ", run_name(h, wl, w, d))
@@ -411,7 +418,7 @@ def main(argv=None):
             for name, err in failures:
                 print(f"  {name}: {err}")
 
-    make_plots(out_folder, args.existing_stats, args.heatmap_window)
+    make_plots(out_folder, args.existing_stats, args.heatmap_window, args.more_stats)
     return 1 if not args.plot_only and not args.dry_run and failures else 0
 
 
