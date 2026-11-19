@@ -109,7 +109,12 @@ class Ctx:
         self.vars = dict(assets=os.path.join(HERE, "assets"), **{k: (os.path.expanduser(v) if isinstance(v, str) else v) for k, v in p.items()})
         for k in ("ctrl_driver", "extract_script"):
             self.vars[k] = self.vars[k].format_map(Safe(self.vars))
-        self.vars["infinigen_dir"] = os.path.expanduser(self.vars["infinigen_dir"])
+        for k in ("mastodon_exe", "python", "mastodon_root", "infinigen_dir", "conda_prefix"):
+            v = self.vars.get(k)
+            if isinstance(v, str):
+                v = os.path.expanduser(v)
+                # relative paths would break because every command runs in its own working directory; a bare name (no separator) is left for PATH lookup
+                self.vars[k] = os.path.abspath(v) if (os.sep in v or "/" in v) else v
         self.vars.update(gin_stems=cfg["infinigen"]["gin_stems"], extract_args=cfg["infinigen"]["extract_args"], device_args=[])
         self.logf = open(os.path.join(self.out, "speedtest.log"), "a", buffering=1)
 
@@ -149,9 +154,11 @@ def run_jobs(ctx, jobs, abort_free_pct=None):
         os.makedirs(j["logdir"], exist_ok=True)
         fo, fe = [os.path.join(j["logdir"], j["name"] + e) for e in (".out.log", ".err.log")]
         rec = dict(name=j["name"], cmd=" ".join(shlex.quote(a) for a in j["argv"]), cwd=j["cwd"], stdout_log=fo, stderr_log=fe, rc=None, timeout=False,
-                   start_error=None, peak_rss_mb=0.0, wall_s=None)
+                   start_error=None, peak_rss_mb=0.0, wall_s=0.0, started=False)
         try:
             p = plat.spawn(j["argv"], j["env"], j["cwd"], fo, fe)
+            rec["wall_s"] = None
+            rec["started"] = True
             live.append(dict(job=j, rec=rec, p=p, t0=time.time()))
         except Exception as e:  # noqa
             rec["start_error"] = repr(e)
@@ -192,8 +199,8 @@ def run_jobs(ctx, jobs, abort_free_pct=None):
         ok = r["rc"] == 0 and not r["timeout"] and not r["start_error"]
         r["ok"] = ok
         if not ok:
-            r["stderr_tail"] = plat.tail_lines(r["stderr_log"], 20) if os.path.exists(r["stderr_log"]) else [r["start_error"] or "no stderr"]
-            if not any(x.strip() for x in r["stderr_tail"]):
+            r["stderr_tail"] = ["COULD NOT START: %s" % r["start_error"], "check that the executable exists (absolute path?), has the exec bit (chmod +x) and is the right architecture"] if r["start_error"] else plat.tail_lines(r["stderr_log"], 20)
+            if not r["start_error"] and not any(x.strip() for x in r["stderr_tail"]):
                 r["stdout_tail"] = plat.tail_lines(r["stdout_log"], 20)
             ctx.log("  FAILED %s rc=%s timeout=%s\n    cmd: %s\n    last stderr lines:\n      %s" % (r["name"], r["rc"], r["timeout"], r["cmd"], "\n      ".join(r["stderr_tail"])))
     return results, group
