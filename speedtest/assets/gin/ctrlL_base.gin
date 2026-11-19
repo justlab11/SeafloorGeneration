@@ -1,0 +1,63 @@
+# Controlled seafloor baseline (generate_nature program: pass via -g, AFTER under_water.gin simple.gin no_assets.gin).
+# Everything here is pinned deliberately; see NOTES.md. Load LAST (before any knob file) so it beats dev.gin / simple.gin.
+
+# ---- lotteries pinned ---------------------------------------------------------------------------------------------
+scene.warped_rocks_chance = 0          # default 0.3 per seed
+scene.voronoi_rocks_chance = 0         # default 0.5 per seed (knob in step 5)
+scene.caves_chance = 0
+LandTiles.land_processes = [None]      # default ['erosion', None] with probs [.65,.35]: erosion low-pass lottery
+LandTiles.land_process_probs = [1]
+Terrain.ground_collection = [("infinigen.assets.materials.terrain.mountain.Mountain", 1)]    # default: random among 7 materials
+Terrain.mountain_collection = [("infinigen.assets.materials.terrain.mountain.Mountain", 1)]  # default Mountain 10/Sandstone 2/Ice 2
+multi_mountains_params.height = 2
+multi_mountains_params.min_freq = 0.0125
+multi_mountains_params.max_freq = 0.045
+multi_mountains_params.slope_freq = 0.0025
+multi_mountains_params.slope_height = 5
+multi_mountains_params.coverage = 0.5
+# material displacement lottery (defaults: scale U(1,5), zscale 10**U(-1,-0.5) = 0.1-0.32 m, crack scale U(1,5)): pinned to numbers
+mountain.geo.noise_params = {"scale": 3, "detail": 8, "roughness": 0.7, "zscale": 0.18}
+mountain.geo.crack_params = {"scale": 3, "zscale_scale": 0.02, "slope_scale": 5, "slope_base": 3, "mask_rampmin": 0.0, "mask_rampmax": 0.3}
+
+# ---- rocks on, everything else off (real stage names only) ----------------------------------------------------------
+compose_nature.rocks_chance = 1.0
+compose_nature.boulders_chance = 1.0
+compose_nature.boulder_density = 0.08
+compose_nature.max_boulder_species = 2           # randint(1, 2) -> exactly one species (high bound is exclusive)
+compose_nature.boulders_seed = 101               # stage RNG pinned (species type / mask threshold)
+compose_nature.rocks_seed = 102                  # pebble scale / vol_density / shapes pinned
+compose_nature.kelp_chance = 0
+compose_nature.corals_chance = 0
+compose_nature.seaweed_chance = 0
+compose_nature.seashells_chance = 0
+compose_nature.urchin_chance = 0
+compose_nature.jellyfish_chance = 0
+compose_nature.ground_creatures_chance = 0
+compose_nature.flying_creatures_chance = 0
+compose_nature.fish_school_chance = 0
+compose_nature.bug_swarm_chance = 0
+compose_nature.glowing_rocks_chance = 0
+compose_nature.caustics_chance = 0
+compose_nature.turbulence_chance = 0
+compose_nature.wind_chance = 0
+
+# ---- nadir camera, monocular, square frame --------------------------------------------------------------------------
+camera.spawn_camera_rigs.n_camera_rigs = 1
+camera.spawn_camera_rigs.camera_rig_config = [{'loc': (0, 0, 0), 'rot_euler': (0, 0, 0)}]
+camera.camera_pose_proposal.pitch = 0            # Blender euler X: 0 = straight down
+camera.camera_pose_proposal.roll = 0
+camera.camera_pose_proposal.yaw = 0
+camera.camera_pose_proposal.focal_length = 12    # 18 mm square sensor -> 73.7 deg fov (<90), footprint = 1.5 x height
+compute_base_views.min_candidates_ratio = 1
+execute_tasks.generate_resolution = (1000, 1000)
+get_sensor_coords.H = 500
+get_sensor_coords.W = 500                         # same aspect as generate_resolution (otherwise AssertionError)
+# pose from ctrl_driver.py: x,y fixed, z = seabed max in radius + clearance (the driver computes it; see NOTES.md)
+ctrl_camera.enabled = True
+ctrl_camera.xy = (0.0, 0.0)
+ctrl_camera.clearance = 4.5
+ctrl_camera.radius = 3.5
+
+# ---- fine mesh -------------------------------------------------------------------------------------------------------
+OpaqueSphericalMesher.pixels_per_cube = 1.84
+TransparentSphericalMesher.pixels_per_cube = 4    # water surface only, not part of the heightmap

@@ -1,0 +1,5 @@
+# wide view: high camera (footprint about 1.5 x height = 21 m) so a 3x3 grid of 5 m patches can be extracted from one scene
+ctrl_camera.clearance = 14.0
+ctrl_camera.radius = 6.0
+# frozen for Task L: facet 2.3 cm at the 14.9 m camera height (ppc 1.84 gave 4.7 cm); 9 patches of 5 x 5 m per scene (3 x 3 grid, spacing 5 m)
+OpaqueSphericalMesher.pixels_per_cube = 0.9

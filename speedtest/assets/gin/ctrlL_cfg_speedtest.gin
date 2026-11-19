@@ -1,0 +1,7 @@
+# speedtest default knobs (L default config)
+multi_mountains_params.height = 2
+mountain.geo.crack_params = {"scale": 3, "zscale_scale": 0.02, "slope_scale": 5, "slope_base": 3, "mask_rampmin": 0.0, "mask_rampmax": 0.3}
+mountain.geo.noise_params = {"scale": 3, "detail": 8, "roughness": 0.7, "zscale": 0.18}
+compose_nature.boulder_density = 0.08
+create_placeholder.boulder_scale = 1
+scene.voronoi_rocks_chance = 0

@@ -1,0 +1,87 @@
+{
+  "_comment": "Machine-specific values for speedtest.py. A key X with a sibling 'X__GUESS' holds a value that was NOT verified against the target machine (reason in the sibling). Placeholders: {name} = other values of 'paths' / per-call variables; $VAR = environment variable; '~' = home. See README.md.",
+
+  "paths": {
+    "mastodon_exe": "~/MASTODON-PR-0.22.6-Linux/bin/MASTODON",
+    "mastodon_exe__GUESS": "install location unknown. The shipped binary is bin/MASTODON (ELF x86-64); it is stored WITHOUT the executable bit in the zip we have, so you probably need: chmod +x bin/MASTODON",
+    "mastodon_exe_args": [],
+    "mastodon_wrapper": [],
+    "mastodon_wrapper__GUESS": "the binary links libX11/libGLX/libOpenGL; on a headless server without these libraries or a display, try [\"xvfb-run\", \"-a\"] (not verified).",
+    "mastodon_root": "~/MASTODON-PR-0.22.6-Linux",
+    "mastodon_root__GUESS": "must be the folder containing bin/ systems/ tools/ (docs QuickStart: MASTODON_FOLDER = root of the install).",
+    "infinigen_dir": "~/ig",
+    "infinigen_dir__GUESS": "was ~/ig in WSL on the dev machine; the target checkout location is unknown.",
+    "python": "~/mamba/envs/ig/bin/python",
+    "python__GUESS": "interpreter of the Infinigen env that has bpy, gin and infinigen installed (was micromamba env 'ig' on the dev machine).",
+    "conda_prefix": "~/mamba/envs/ig",
+    "conda_prefix__GUESS": "only used for LD_LIBRARY_PATH below (the dev scripts exported $CONDA_PREFIX/lib).",
+    "ctrl_driver": "{assets}/tools/ctrl_driver.py",
+    "extract_script": "{assets}/tools/I_controlled_scene/extract_patch.py",
+    "output_dir": "./speedtest_out",
+    "reference_heightmap": null,
+    "nvidia_smi": ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]
+  },
+
+  "env": {
+    "mastodon": {
+      "MASTODON_FOLDER": "{mastodon_root}",
+      "LD_LIBRARY_PATH": "{mastodon_root}/bin:$LD_LIBRARY_PATH",
+      "LD_LIBRARY_PATH__GUESS": "the zip ships no bundled .so files (only bin/MASTODON and bin/ModelViewer), so this only matters if you add libraries next to the binary.",
+      "BELLHOP_PATH": null,
+      "BELLHOP_PATH__GUESS": "only needed for Bellhop signal/propagation models; this test uses propagation.model = Geometric, so it is unset. Set it to the folder with the bellhop executable if a run complains about Bellhop."
+    },
+    "infinigen": {
+      "LD_LIBRARY_PATH": "{conda_prefix}/lib:$LD_LIBRARY_PATH",
+      "CTRL_LOG": "{outdir}/logs/ctrl_log.jsonl"
+    }
+  },
+
+  "infinigen": {
+    "seed": 1,
+    "gin_stems": ["under_water.gin", "simple.gin", "no_assets.gin", "ctrlL_base.gin", "ctrlL_cam_wide.gin", "ctrlL_cfg_speedtest.gin"],
+    "install_gin": true,
+    "gin_install_dir": "{infinigen_dir}/src/infinigen_examples/configs_nature",
+    "gin_install_dir__GUESS": "true for the dev checkout (git edac8171); gin resolves -g files BY STEM from this folder, so the three assets/gin/*.gin files are copied there (nothing else in the checkout is touched).",
+    "cwd": "{infinigen_dir}",
+    "timeout_s": 7200,
+    "coarse_cmd": ["{python}", "{ctrl_driver}", "--seed", "{seed}", "--task", "coarse", "-g", "{*gin_stems}", "--task_uniqname", "coarse", "-p", "LOG_DIR='{outdir}/logs'", "{*device_args}", "--output_folder", "{outdir}/coarse"],
+    "fine_cmd": ["{python}", "{ctrl_driver}", "--seed", "{seed}", "--task", "populate", "fine_terrain", "-g", "{*gin_stems}", "--task_uniqname", "fine", "-p", "LOG_DIR='{outdir}/logs'", "{*device_args}", "--input_folder", "{outdir}/coarse", "--output_folder", "{outdir}/fine"],
+    "extract_cmd": ["{python}", "{extract_script}", "--blend", "{outdir}/fine/scene.blend", "--out", "{outdir}/patches", "{*extract_args}"],
+    "extract_args": ["--from-camera", "--extra", "-5", "-5", "--extra", "-5", "0", "--extra", "-5", "5", "--extra", "0", "-5", "--extra", "0", "5", "--extra", "5", "-5", "--extra", "5", "0", "--extra", "5", "5"],
+    "cuda_device_args": ["Terrain.device='cuda'"],
+    "cuda_device_args__GUESS": "Terrain.device is a gin-configurable argument of infinigen.terrain.core.Terrain (default 'cpu', lib/<device>/ must exist, i.e. the CUDA terrain libraries must have been built). Value 'cuda' is not verified; the WSL checkout only had terrain/lib/cpu."
+  },
+
+  "mastodon": {
+    "small_repeats": 3,
+    "timeout_s": 1800,
+    "cmd": ["{*mastodon_wrapper}", "{mastodon_exe}", "{*mastodon_exe_args}", "{config}"],
+    "extra_overrides": {},
+    "allow_validation_errors": false,
+    "patch_center_x": 10.0,
+    "profiles": {
+      "small": {"pings": 20, "range_max": null, "range_inc": 0.05, "angle_inc": 2.0, "altitude": 3.0, "threads": 4,
+                "map": {"xmin": 6.5, "xmax": 13.5, "ymin": -3.5, "ymax": 3.5}},
+      "prod":  {"pings": 111, "range_max": 30.0, "range_inc": 0.05, "angle_inc": 2.0, "altitude": 3.0, "threads": 4,
+                "map": {"xmin": 0.0, "xmax": 32.0, "ymin": -6.5, "ymax": 6.5},
+                "map__GUESS": "map extent/resolution of the old 'production' run (76 s, 8.6 GB) were not recorded; this is a flat 32 x 13 m map at the patch resolution (2.5 cm) with the Infinigen patch pasted at x = 10 m. Pings, range and sonar are as specified. Peak RAM will differ from 8.6 GB if the old map was finer.",
+                "threads__GUESS": "calc.num_threads; 0 may mean 'all cores' (docs ConfigParams) but is untested; 4 is the value used in the dev runs."}
+    }
+  },
+
+  "cuda_terrain": {"enabled": true},
+
+  "concurrency": {
+    "workload": "prod",
+    "levels": [1, 2, 4, 8],
+    "min_free_ram_pct": 15,
+    "threads_policy": "divide",
+    "threads_policy__GUESS": "'divide' sets calc.num_threads = max(1, cores // N) per job so the machine is not oversubscribed; 'keep' leaves the profile value."
+  },
+
+  "determinism": {"infinigen": true, "mastodon": true, "float_tolerance": 1e-9},
+
+  "e2e": {"repeats": 5, "mastodon_runs": 9, "profile": "small", "parallel": "auto", "seed_offset": 100},
+
+  "limits": {"min_free_disk_gb": 20, "sample_interval_s": 0.2, "keep_work": false}
+}
