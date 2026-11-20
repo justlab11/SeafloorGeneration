@@ -54,18 +54,20 @@
 
   "mastodon": {
     "small_repeats": 3,
+    "num_threads": 4,
+    "num_threads__GUESS": "calc.num_threads written into every generated MASTODON config (a profile may override it with its own \"threads\"; concurrency.threads_policy=divide overrides both). 4 is the value used in the dev runs; 0 may mean 'all cores' (docs ConfigParams) but is untested.",
     "timeout_s": 1800,
     "cmd": ["{*mastodon_wrapper}", "{mastodon_exe}", "{*mastodon_exe_args}", "{config}"],
     "extra_overrides": {},
     "allow_validation_errors": false,
     "patch_center_x": 10.0,
     "profiles": {
-      "small": {"pings": 20, "range_max": null, "range_inc": 0.05, "angle_inc": 2.0, "altitude": 3.0, "threads": 4,
+      "small": {"pings": 20, "range_max": null, "range_inc": 0.05, "angle_inc": 2.0, "altitude": 3.0,
                 "map": {"xmin": 6.5, "xmax": 13.5, "ymin": -3.5, "ymax": 3.5}},
-      "prod":  {"pings": 111, "range_max": 30.0, "range_inc": 0.05, "angle_inc": 2.0, "altitude": 3.0, "threads": 4,
-                "map": {"xmin": 0.0, "xmax": 32.0, "ymin": -6.5, "ymax": 6.5},
-                "map__GUESS": "map extent/resolution of the old 'production' run (76 s, 8.6 GB) were not recorded; this is a flat 32 x 13 m map at the patch resolution (2.5 cm) with the Infinigen patch pasted at x = 10 m. Pings, range and sonar are as specified. Peak RAM will differ from 8.6 GB if the old map was finer.",
-                "threads__GUESS": "calc.num_threads; 0 may mean 'all cores' (docs ConfigParams) but is untested; 4 is the value used in the dev runs."}
+      "prod":  {"pings": 111, "range_max": 30.0, "range_inc": 0.05, "angle_inc": 2.0, "altitude": 3.0,
+                "map": {"xmin": 0.0, "xmax": 30.0, "ymin": -8.0, "ymax": 8.0, "dx": 0.025},
+                "overrides": {"sonars.receiver.num_elem_hor": 13, "sonars.receiver.sample_frequency": 504000, "sonars.receiver.baseband": true},
+                "overrides__GUESS": "13 receiver elements together with the real-aperture settings kept from the frozen spec (elem_width absent, hor_beamwidth 0.37, beamformer 'magnitude'); the validator only warns (dping > half array) but MASTODON's behaviour with 13 elements and no elem_width was not tested."}
     }
   },
 
@@ -76,7 +78,8 @@
     "levels": [1, 2, 4, 8],
     "min_free_ram_pct": 15,
     "threads_policy": "divide",
-    "threads_policy__GUESS": "'divide' sets calc.num_threads = max(1, cores // N) per job so the machine is not oversubscribed; 'keep' leaves the profile value."
+    "infinigen": {"enabled": true, "levels": [2, 4, 8], "seed_offset": 500},
+    "threads_policy__GUESS": "'divide' sets calc.num_threads = max(1, cores // N) per job so the machine is not oversubscribed; 'keep' leaves mastodon.num_threads (or the profile's own threads)."
   },
 
   "determinism": {"infinigen": true, "mastodon": true, "float_tolerance": 1e-9},

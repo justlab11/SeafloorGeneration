@@ -337,6 +337,8 @@ def map_for(ctx, profile_name):
     patch, label = get_heightmap(ctx)
     m = prof["map"]
     ext = (m["xmin"], m["xmax"], m["ymin"], m["ymax"])
+    if m.get("dx") is not None and abs(patch["dx"] - m["dx"]) > 1e-9:
+        ctx.log("  WARNING: profile %s asks for map dx %s m but the heightmap patch has dx %s m (the map uses the patch's dx)" % (profile_name, m["dx"], patch["dx"]))
     t = time.time()
     hm, top = mm.make_map(patch, ext, ctx.cfg["mastodon"]["patch_center_x"])
     path = os.path.join(ctx.out, "maps", "%s_%s.txt" % (profile_name, hashlib.sha1(label.encode()).hexdigest()[:6]))
@@ -350,14 +352,17 @@ def mastodon_prepare(ctx, profile_name, wd, threads=None, tag=""):
     prof = ctx.cfg["mastodon"]["profiles"][profile_name]
     mp = map_for(ctx, profile_name)
     os.makedirs(wd, exist_ok=True)
-    cfg = mm.build_profile_cfg(prof, mp["path"], mp["ext"], mp["dx"], threads or prof["threads"], ctx.cfg["mastodon"]["extra_overrides"])
+    nthreads = threads or prof.get("threads") or ctx.cfg["mastodon"]["num_threads"]
+    extra = dict(ctx.cfg["mastodon"]["extra_overrides"])
+    extra.update(prof.get("overrides", {}))
+    cfg = mm.build_profile_cfg(prof, mp["path"], mp["ext"], mp["dx"], nthreads, extra)
     probs = st_validate.validate(cfg, mp["stats"])
     errors = [p for p in probs if p[0] == "ERROR"]
     cfgp = os.path.join(wd, "CONFIG.cfg")
     with open(cfgp, "w") as f:
         f.write(mm.dumps(cfg))
     prep = dict(wd=wd, cfgp=cfgp, validation=dict(errors=errors, warnings=[p for p in probs if p[0] == "WARN"]), ok_to_run=(not errors) or ctx.cfg["mastodon"]["allow_validation_errors"],
-                map=dict(source=mp["source"], shape=mp["shape"], relief_max=mp["relief_max"]), threads=threads or prof["threads"])
+                map=dict(source=mp["source"], shape=mp["shape"], relief_max=mp["relief_max"]), threads=nthreads)
     mc = ctx.cfg["mastodon"]
     v = ctx.v(config=cfgp, outdir=wd)
     prep["job"] = dict(name="mastodon_" + profile_name + tag, argv=fill_argv(mc["cmd"], v), env=ctx.env("mastodon"), cwd=wd, logdir=os.path.join(wd, "logs"), timeout=mc["timeout_s"])
@@ -454,7 +459,7 @@ def st_cuda(ctx):
 
 
 # ============================================================================= concurrency scaling
-def st_concurrency(ctx):
+def _concurrency_mastodon(ctx):
     cc = ctx.cfg["concurrency"]
     prof = cc["workload"]
     floor = cc["min_free_ram_pct"]
@@ -498,6 +503,118 @@ def st_concurrency(ctx):
     best = max([l for l in levels if l.get("jobs_per_hour") and not l.get("aborted_low_ram")], key=lambda l: l["jobs_per_hour"], default=None)
     return dict(status="ok" if levels and any(l.get("jobs_ok") for l in levels) else "failed", workload=prof, levels=levels, stopped=stopped, best_level=best["n"] if best else None,
                 cores=cores, single_peak_rss_mb=peak1 / 2 ** 20 if peak1 else None)
+
+
+def _infinigen_level(ctx, n, floor, base_wall):
+    """N whole Infinigen scenes at once: phase 1 = N coarse runs, phase 2 = N fine runs, phase 3 = N extractions, each phase through run_jobs (RAM sampling, abort below `floor`)."""
+    ic = ctx.cfg["concurrency"]["infinigen"]
+    base = os.path.join(ctx.out, "work", "iconc_%d" % n)
+    shutil.rmtree(base, ignore_errors=True)
+    wds = [os.path.join(base, "s%d" % i) for i in range(n)]
+    seeds = [ctx.cfg["infinigen"]["seed"] + ic["seed_offset"] + i for i in range(n)]
+    expect = {"coarse": ("coarse", "scene.blend"), "fine": ("fine", "scene.blend"), "extract": ("patches", os.path.join("patch_00", "heightmap_patch.txt"))}
+    alive, phase_wall, failed = list(range(n)), {}, []
+    peak_total, min_free, aborted = 0.0, None, False
+    t0 = time.time()
+    ctx.log("concurrency (Infinigen): %d scenes at once" % n)
+    for which in ("coarse", "fine", "extract"):
+        if not alive:
+            break
+        jobs = [ig_job(ctx, which, wds[i], seeds[i], (), "_c%d_%d" % (n, i)) for i in alive]
+        res, grp = run_jobs(ctx, jobs, abort_free_pct=floor)
+        phase_wall[which] = grp["wall_s"]
+        peak_total = max(peak_total, grp["peak_total_rss_mb"])
+        if grp["min_free_pct"] is not None:
+            min_free = grp["min_free_pct"] if min_free is None else min(min_free, grp["min_free_pct"])
+        aborted = aborted or grp["aborted"]
+        sub, fname = expect[which]
+        nxt = []
+        for i, r in zip(alive, res):
+            if r["ok"] and os.path.exists(os.path.join(wds[i], sub, fname)):
+                nxt.append(i)
+            elif len(failed) < 2:
+                failed.append(short(r))
+        alive = [] if grp["aborted"] else nxt
+    wall = time.time() - t0
+    lv = dict(n=n, wall_s=wall, phase_wall_s=phase_wall, scenes_ok=len(alive), scenes_per_hour=3600.0 * len(alive) / wall if wall else None, peak_total_rss_mb=peak_total,
+              min_free_pct=min_free, aborted_low_ram=aborted, failed=failed)
+    if base_wall and alive:
+        lv["speedup_vs_serial"] = len(alive) * base_wall / wall
+    if not ctx.cfg["limits"]["keep_work"]:
+        shutil.rmtree(base, ignore_errors=True)
+    return lv
+
+
+def _concurrency_infinigen(ctx, prior_inf, save):
+    """Infinigen levels of the concurrency stage (config concurrency.infinigen); resumable level by level."""
+    cc = ctx.cfg["concurrency"]
+    ic = cc["infinigen"]
+    floor = cc["min_free_ram_pct"]
+    runs = [ctx.results.get(k, {}) for k in ("infinigen_coarse", "infinigen_fine", "extract")]
+    have_base = all(r.get("status") == "ok" and r.get("run") for r in runs)
+    base_wall = sum(r["run"]["wall_s"] for r in runs) if have_base else None
+    base_peak = max(r["run"]["peak_rss_mb"] for r in runs) * 2 ** 20 if have_base else 0
+    scene_gb = ((runs[0].get("coarse_dir_mb") or 0) + (runs[1].get("fine_dir_mb") or 0)) / 1024.0 if have_base else 0
+    scene_gb = scene_gb or 3.0
+    total = ctx.sys.total_ram() or 0
+    out = dict(prior_inf or {})
+    levels = [l for l in out.get("levels", []) if l.get("scenes_ok") or l.get("skipped")]
+    out.update(levels=levels, scene_serial_wall_s=base_wall, single_scene_peak_rss_mb=base_peak / 2 ** 20 if base_peak else None)
+    done = {l["n"] for l in levels}
+    for n in ic["levels"]:
+        if out.get("stopped"):
+            break
+        if n in done:
+            continue
+        free_now = ctx.sys.free_pct(0)
+        pred = 100.0 * base_peak * n / total if (base_peak and total) else 0
+        fd = ctx.free_disk_gb()
+        need = ctx.cfg["limits"]["min_free_disk_gb"] + n * scene_gb
+        reason = None
+        if free_now is not None and base_peak and free_now - pred < floor:
+            reason = "predicted free RAM %.1f%% after %d scenes (%.0f MB each) < %d%%" % (free_now - pred, n, base_peak / 2 ** 20, floor)
+        elif fd is not None and fd < need:
+            reason = "free disk %.1f GB < %.1f GB needed for %d scenes" % (fd, need, n)
+        if reason:
+            ctx.log("  concurrency (Infinigen): stop before level %d: %s" % (n, reason))
+            levels.append(dict(n=n, skipped=True, reason=reason))
+            out["stopped"] = reason
+            break
+        lv = _infinigen_level(ctx, n, floor, base_wall)
+        levels.append(lv)
+        if lv["aborted_low_ram"]:
+            out["stopped"] = "free RAM fell below %d%% during level %d (jobs killed)" % (floor, n)
+        save(out)
+    best = max([l for l in levels if l.get("scenes_per_hour") and not l.get("aborted_low_ram")], key=lambda l: l["scenes_per_hour"], default=None)
+    out["best_level"] = best["n"] if best else None
+    out["status"] = "ok" if any(l.get("scenes_ok") for l in levels) else "failed"
+    return out
+
+
+def st_concurrency(ctx, prior=None):
+    """MASTODON levels (as before) followed by the Infinigen levels. On --resume finished parts of an earlier run are reused."""
+    prior = prior or {}
+    path = os.path.join(ctx.out, "stages", "concurrency.json")
+    if prior.get("levels") and prior.get("status") in ("ok", "partial"):
+        res = {k: v for k, v in prior.items() if k not in ("infinigen", "stage_wall_s", "finished_at")}
+        res["status"] = "ok"
+        ctx.log("  concurrency: MASTODON levels reused from the earlier run")
+    else:
+        res = _concurrency_mastodon(ctx)
+    if res["status"] == "ok":
+        write_json(path, dict(res, status="partial", infinigen=prior.get("infinigen")))
+    if ctx.cfg["concurrency"].get("infinigen", {}).get("enabled"):
+        try:
+            res["infinigen"] = _concurrency_infinigen(ctx, prior.get("infinigen"), lambda inf: write_json(path, dict(res, status="partial", infinigen=inf)))
+        except Exception as e:  # noqa
+            res["infinigen"] = dict(status="failed", exception=repr(e), traceback=traceback.format_exc().splitlines()[-20:], levels=[])
+            ctx.log("concurrency (Infinigen) raised %r" % e)
+    return res
+
+
+def stage_incomplete(ctx, name, prior):
+    """A finished stage file that still lacks a part that is enabled now (Infinigen levels of the concurrency stage) is not skipped by --resume."""
+    return name == "concurrency" and bool(ctx.cfg["concurrency"].get("infinigen", {}).get("enabled")) and (prior.get("infinigen") or {}).get("status") != "ok"
 
 
 # ============================================================================= determinism
@@ -751,7 +868,7 @@ def run_stage(ctx, name, fn, only, skip, resume):
             prior = json.load(open(path))
         except Exception:  # noqa
             prior = None
-        if prior and prior.get("status") in ("ok", "skipped"):
+        if prior and prior.get("status") in ("ok", "skipped") and not stage_incomplete(ctx, name, prior):
             ctx.results[name] = prior
             ctx.log("stage %s: finished earlier (%s), resumed" % (name, prior["status"]))
             return
@@ -763,7 +880,7 @@ def run_stage(ctx, name, fn, only, skip, resume):
         ctx.log("=== stage %s ===" % name)
         t = time.time()
         try:
-            res = fn(ctx, prior) if name == "e2e" else fn(ctx)
+            res = fn(ctx, prior) if name in ("e2e", "concurrency") else fn(ctx)
         except Exception as e:  # noqa
             res = dict(status="failed", exception=repr(e), traceback=traceback.format_exc().splitlines()[-20:])
             ctx.log("stage %s raised %r\n%s" % (name, e, "\n".join(res["traceback"])))
@@ -829,6 +946,17 @@ def build_report(ctx):
                 L.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (l["n"], l["threads_per_job"], fm(l["wall_s"]), fm(l["jobs_per_hour"], 0), fm(l.get("speedup_vs_first_level"), 2, "x"), fm(l["per_job_wall_mean_s"]),
                                                                           fm(l["peak_total_rss_mb"], 0), fm(l["min_free_pct"]), "ABORTED (low RAM)" if l["aborted_low_ram"] else ("%d/%d ok" % (l["jobs_ok"], l["n"]))))
         L.append("\nStopped: %s. Best level: %s." % (cn.get("stopped") or "levels exhausted", cn.get("best_level")))
+    ci = cn.get("infinigen")
+    if ci:
+        L += ["", "### Infinigen scenes (coarse -> fine -> extraction, each phase with N scenes at once)", "", "One scene run alone: %s s, peak RSS %s MB. Status: %s." % (fm(ci.get("scene_serial_wall_s")), fm(ci.get("single_scene_peak_rss_mb"), 0), ci.get("status")), "",
+              "| scenes | wall (s) | scenes/hour | speedup vs serial | peak total RSS (MB) | min free RAM % | note |", "|---|---|---|---|---|---|---|"]
+        for l in ci.get("levels", []):
+            if l.get("skipped"):
+                L.append("| %s | | | | | | skipped: %s |" % (l["n"], l["reason"]))
+            else:
+                L.append("| %s | %s | %s | %s | %s | %s | %s |" % (l["n"], fm(l["wall_s"]), fm(l["scenes_per_hour"], 1), fm(l.get("speedup_vs_serial"), 2, "x"), fm(l["peak_total_rss_mb"], 0), fm(l["min_free_pct"]),
+                                                                  "ABORTED (low RAM)" if l["aborted_low_ram"] else "%d/%d ok" % (l["scenes_ok"], l["n"])))
+        L.append("\nStopped: %s. Best level: %s." % (ci.get("stopped") or "levels exhausted", ci.get("best_level")))
     dt = R.get("determinism", {})
     L += ["", "## Determinism", ""]
     for k in ("infinigen", "mastodon", "reference"):
@@ -947,6 +1075,8 @@ def selftest(args):
         R = c1.results
         check(all(R[s]["status"] == "ok" for s in ("hardware", "setup_gin", "infinigen_coarse", "infinigen_fine", "extract", "mastodon_small", "mastodon_prod", "cuda_terrain", "determinism", "e2e")), "all stages ok: " + str({k: v.get("status") for k, v in R.items()}))
         check(R["concurrency"]["status"] == "ok" and [l["n"] for l in R["concurrency"]["levels"]][-1] == 8 and R["concurrency"]["levels"][-1].get("aborted_low_ram"), "concurrency: levels 1,2,4 ran, level 8 aborted at the 15 % RAM floor")
+        ci = R["concurrency"].get("infinigen", {})
+        check(ci.get("status") == "ok" and [l["n"] for l in ci["levels"]] == [2, 4, 8] and ci["levels"][-1].get("aborted_low_ram") and ci["levels"][0]["scenes_ok"] == 2, "concurrency (Infinigen): 2 and 4 scenes ran, 8 aborted at the 15 % RAM floor")
         check(R["cuda_terrain"].get("speedup_total", 0) > 1, "CUDA stage ran against GPU stub, speedup %s" % fm(R["cuda_terrain"].get("speedup_total"), 2))
         check(R["determinism"]["mastodon"]["identical"] and R["determinism"]["infinigen"]["identical"], "determinism: stubs identical")
         check(R["e2e"]["n_ok"] == 2 and R["e2e"]["evals_per_hour"] > 0, "e2e %s evals/hour" % fm(R["e2e"]["evals_per_hour"], 0))
